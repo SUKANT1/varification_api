@@ -1,0 +1,9 @@
+name = "verification-api"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# After creating the D1 database, add the database_id here
+[[d1_databases]]
+binding = "DB"
+database_name = "verification-logs"
+database_id = "YOUR_DATABASE_ID_HERE"  # Replace with actual database ID
