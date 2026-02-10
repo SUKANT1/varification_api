@@ -1,0 +1,25 @@
+{
+  "name": "verification-api",
+  "version": "1.0.0",
+  "description": "Daily verification API with IST timezone and database logging",
+  "main": "src/index.js",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "tail": "wrangler tail",
+    "db:create": "wrangler d1 create verification-logs",
+    "db:init": "wrangler d1 execute verification-logs --file=schema.sql",
+    "db:query": "wrangler d1 execute verification-logs --command"
+  },
+  "keywords": [
+    "verification",
+    "cloudflare",
+    "workers",
+    "api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
