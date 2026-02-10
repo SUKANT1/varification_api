@@ -7,6 +7,7 @@ const SECRET_SALT = "Sk2024#Lx7Mq9Pv3Zt8Xw1Bn6Cr4Fy5Gh2Jk0Nl3";
 // HELPER FUNCTIONS
 // ============================================
 
+// Get current IST date (YYYYMMDD format)
 function getISTDate() {
   const now = new Date();
   const istOffset = 5.5 * 60 * 60 * 1000; // IST = UTC + 5:30
@@ -17,6 +18,7 @@ function getISTDate() {
   return `${year}${month}${day}`;
 }
 
+// Get current IST timestamp
 function getISTTimestamp() {
   const now = new Date();
   const istOffset = 5.5 * 60 * 60 * 1000;
@@ -24,6 +26,7 @@ function getISTTimestamp() {
   return istTime.toISOString();
 }
 
+// Generate daily verification code
 async function generateDailyCode(dateString, secretSalt) {
   const message = `${dateString}_${secretSalt}`;
   const encoder = new TextEncoder();
@@ -45,9 +48,64 @@ async function generateDailyCode(dateString, secretSalt) {
   return code;
 }
 
+// Parse user agent to extract rich device info
+function parseUserAgent(userAgent) {
+  const info = {
+    browser: 'Unknown',
+    browserVersion: 'Unknown',
+    os: 'Unknown',
+    osVersion: 'Unknown',
+    deviceType: 'Desktop'
+  };
+  
+  if (!userAgent) return info;
+  
+  // Detect OS
+  if (userAgent.includes('Windows NT 10.0')) info.os = 'Windows', info.osVersion = '10';
+  else if (userAgent.includes('Windows NT 6.3')) info.os = 'Windows', info.osVersion = '8.1';
+  else if (userAgent.includes('Windows NT 6.2')) info.os = 'Windows', info.osVersion = '8';
+  else if (userAgent.includes('Windows NT 6.1')) info.os = 'Windows', info.osVersion = '7';
+  else if (userAgent.includes('Mac OS X')) {
+    info.os = 'macOS';
+    const match = userAgent.match(/Mac OS X (\d+)[._](\d+)/);
+    if (match) info.osVersion = `${match[1]}.${match[2]}`;
+  }
+  else if (userAgent.includes('Android')) {
+    info.os = 'Android';
+    info.deviceType = 'Mobile';
+    const match = userAgent.match(/Android (\d+\.?\d*)/);
+    if (match) info.osVersion = match[1];
+  }
+  else if (userAgent.includes('iPhone') || userAgent.includes('iPad')) {
+    info.os = userAgent.includes('iPad') ? 'iPadOS' : 'iOS';
+    info.deviceType = userAgent.includes('iPad') ? 'Tablet' : 'Mobile';
+    const match = userAgent.match(/OS (\d+)[._](\d+)/);
+    if (match) info.osVersion = `${match[1]}.${match[2]}`;
+  }
+  else if (userAgent.includes('Linux')) info.os = 'Linux';
+  
+  // Detect Browser
+  if (userAgent.includes('Edg/')) {
+    info.browser = 'Edge';
+    const match = userAgent.match(/Edg\/(\d+\.\d+)/);
+    if (match) info.browserVersion = match[1];
+  }
+  else if (userAgent.includes('Chrome/')) {
+    info.browser = 'Chrome';
+    const match = userAgent.match(/Chrome\/(\d+\.\d+)/);
+    if (match) info.browserVersion = match[1];
+  }
+  else if (userAgent.includes('Firefox/')) {
+    info.browser = 'Firefox';
+    const match = userAgent.match(/Firefox\/(\d+\.\d+)/);
+    if (match) info.browserVersion = match[1];
+  }
+  
+  return info;
+}
+
 function isAuthorized(request, env) {
   const authHeader = request.headers.get('Authorization');
-  // Expects header: "Authorization: Bearer YOUR_ADMIN_TOKEN"
   return authHeader === `Bearer ${env.ADMIN_TOKEN}`;
 }
 
@@ -55,11 +113,18 @@ async function logVerification(db, data) {
   try {
     await db.prepare(`
       INSERT INTO verification_logs (
-        timestamp, success, code_entered, ip_address, country, city, user_agent
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        timestamp, success, code_entered, ip_address, country, city,
+        user_agent, browser, browser_version, os, os_version,
+        device_type, device_vendor, device_model, screen_resolution,
+        timezone, language, extension_version
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      data.timestamp, data.success ? 1 : 0, data.codeEntered, 
-      data.ipAddress, data.country, data.city, data.userAgent
+      data.timestamp, data.success ? 1 : 0, data.codeEntered || null,
+      data.ipAddress || null, data.country || null, data.city || null,
+      data.userAgent || null, data.browser || null, data.browserVersion || null,
+      data.os || null, data.osVersion || null, data.deviceType || null,
+      data.deviceVendor || null, data.deviceModel || null, data.screenResolution || null,
+      data.timezone || null, data.language || null, data.extensionVersion || null
     ).run();
   } catch (e) { console.error('Logging Error:', e); }
 }
@@ -89,11 +154,15 @@ export default {
       });
     }
 
-    // 2. Verify Route (Main logic)
+    // 2. Verify Route (With rich data logging)
     if (url.pathname === '/verify' && request.method === 'POST') {
       try {
         const body = await request.json();
         const userCode = body.code;
+        const deviceInfo = body.deviceInfo || {};
+        const userAgent = request.headers.get('User-Agent') || '';
+        const uaInfo = parseUserAgent(userAgent);
+        
         const isSuccess = userCode === todayCode;
 
         await logVerification(env.DB, {
@@ -103,7 +172,18 @@ export default {
           ipAddress: request.headers.get('CF-Connecting-IP'),
           country: request.headers.get('CF-IPCountry'),
           city: request.cf?.city || 'Unknown',
-          userAgent: request.headers.get('User-Agent')
+          userAgent: userAgent,
+          browser: uaInfo.browser,
+          browserVersion: uaInfo.browserVersion,
+          os: uaInfo.os,
+          osVersion: uaInfo.osVersion,
+          deviceType: deviceInfo.deviceType || uaInfo.deviceType,
+          deviceVendor: deviceInfo.deviceVendor || null,
+          deviceModel: deviceInfo.deviceModel || null,
+          screenResolution: deviceInfo.screenResolution || null,
+          timezone: deviceInfo.timezone || null,
+          language: deviceInfo.language || null,
+          extensionVersion: deviceInfo.extensionVersion || null
         });
 
         return new Response(JSON.stringify({ success: isSuccess }), {
@@ -121,12 +201,10 @@ export default {
         return new Response('Unauthorized', { status: 401, headers: corsHeaders });
       }
 
-      // Route: Get current code for admin verification
       if (url.pathname === '/admin-code') {
         return new Response(JSON.stringify({ code: todayCode }), { headers: corsHeaders });
       }
 
-      // Route: Fetch logs from D1
       if (url.pathname === '/logs') {
         const { results } = await env.DB.prepare(`
           SELECT * FROM verification_logs ORDER BY timestamp DESC LIMIT 50
@@ -136,7 +214,6 @@ export default {
         });
       }
 
-      // Route: Basic statistics
       if (url.pathname === '/stats') {
         const { results } = await env.DB.prepare(`
           SELECT success, COUNT(*) as count FROM verification_logs GROUP BY success
