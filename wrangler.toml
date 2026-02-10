@@ -6,4 +6,4 @@ compatibility_date = "2024-01-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "verification-logs"
-database_id = "YOUR_DATABASE_ID_HERE"  # Replace with actual database ID
+database_id = "6ac7b4e9-c184-4f2c-aca4-2a29e754b100"  # Replace with actual database ID
